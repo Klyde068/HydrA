@@ -1,12 +1,7 @@
-import React, { useState } from 'react';
-import { Switch } from 'react-native';
-import { AnimatedCircularProgress } from 'react-native-circular-progress';
-import { Keyboard } from 'react-native';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
-import { ScrollView } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+// App.js
+import React, { useState, useEffect } from 'react';
 import {
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -14,11 +9,18 @@ import {
   Button,
   Alert,
   TouchableOpacity,
+  Switch
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { AnimatedCircularProgress } from 'react-native-circular-progress';
 
 const Stack = createNativeStackNavigator();
+
+// 🔧 Set this to your tank's maximum water depth in cm
+const MAX_DISTANCE_CM = 30;
 
 export default function App() {
   return (
@@ -32,6 +34,7 @@ export default function App() {
   );
 }
 
+// --- LOGIN SCREEN ---
 function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -77,6 +80,7 @@ function LoginScreen({ navigation }) {
   );
 }
 
+// --- REGISTER SCREEN ---
 function RegisterScreen({ navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -85,20 +89,19 @@ function RegisterScreen({ navigation }) {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const handleRegister = () => {
-  if (!username || !password || !confirmPassword) {
-    Alert.alert('Error', 'Please fill in all fields');
-    return;
-  }
+    if (!username || !password || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
 
-  if (password !== confirmPassword) {
-    Alert.alert('Error', 'Passwords do not match');
-    return;
-  }
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
 
-  Alert.alert('Success', 'Account created!');
-  navigation.navigate('Login');
-};
-
+    Alert.alert('Success', 'Account created!');
+    navigation.navigate('Login');
+  };
 
   return (
     <View style={styles.authContainer}>
@@ -141,22 +144,39 @@ function RegisterScreen({ navigation }) {
   );
 }
 
+// --- DASHBOARD SCREEN ---
 function DashboardScreen({ navigation }) {
-  const [selectedRange, setSelectedRange] = useState('12h');
+  const [sensorData, setSensorData] = useState({
+    hum: 0,
+    water: 0,       // Distance in cm from ultrasonic sensor
+    soiltemp: 0,
+    soilph: 0,
+  });
 
-  const [isPumpOn, setIsPumpOn] = useState(false);
-  const [isDoserOn, setIsDoserOn] = useState(false);
+  const [relays, setRelays] = useState([false]);
+  const relayNames = ["Water Pump"];
 
-  const [pumpDate, setPumpDate] = useState(new Date());
-  const [doserDate, setDoserDate] = useState(new Date());
+  // Fetch sensor data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetch("http://192.168.1.106/sensor")
+        .then((res) => res.json())
+        .then((data) => setSensorData(data))
+        .catch((err) => console.log("Fetch error:", err));
+    }, 2000);
 
-  const [showPumpPicker, setShowPumpPicker] = useState(false);
-  const [showDoserPicker, setShowDoserPicker] = useState(false);
+    return () => clearInterval(interval);
+  }, []);
 
-  const [waterLevel, setWaterLevel] = useState(0.6);
-  const [humidity, setHumidity] = useState(45); 
-  const [waterTemp, setWaterTemp] = useState(22); 
+  const toggleRelay = (index) => {
+    const newRelays = [...relays];
+    newRelays[index] = !newRelays[index];
+    setRelays(newRelays);
 
+    fetch(
+      `http://192.168.1.106/update?relay=${index + 1}&state=${newRelays[index] ? 1 : 0}`
+    ).catch((err) => console.log("Relay error:", err));
+  };
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -169,101 +189,88 @@ function DashboardScreen({ navigation }) {
     });
   }, [navigation]);
 
-  const onChangePumpDate = (event, selectedDate) => {
-    setShowPumpPicker(false);
-    if (selectedDate) setPumpDate(selectedDate);
-  };
-
-  const onChangeDoserDate = (event, selectedDate) => {
-    setShowDoserPicker(false);
-    if (selectedDate) setDoserDate(selectedDate);
-  };
+  // 🔁 Calculate water level based on ultrasonic distance
+  const rawDistance = sensorData.water ?? MAX_DISTANCE_CM;
+  const waterLevelPercent = Math.max(
+    0,
+    Math.min(100, ((MAX_DISTANCE_CM - rawDistance) / MAX_DISTANCE_CM) * 100)
+  );
 
   return (
+
+    
     <ScrollView style={styles.dashboardContainer} contentContainerStyle={{ paddingBottom: 20 }}>
-     <View style={styles.card}>
-  <Text style={styles.label}>pH Level</Text>
-  <AnimatedCircularProgress
-    size={120}
-    width={15}
-    fill={20} 
-    tintColor="#00e6c3"
-    backgroundColor="#333"
-    rotation={0}
-    lineCap="round"
-  >
-    {
-      (fill) => (
-        <Text style={{ color: '#fff', fontSize: 24 }}>
-          {((fill / 100) * 14).toFixed(1)} pH
-        </Text>
-      )
-    }
-  </AnimatedCircularProgress>
-</View>
 
-<View style={styles.card}>
-  <Text style={styles.label}>Humidity</Text>
-  <Text style={styles.value}>{humidity}%</Text>
-</View>
-
-<View style={styles.card}>
-  <Text style={styles.label}>Water Temperature</Text>
-  <Text style={styles.value}>{waterTemp}°C</Text>
-</View>
-
-
-      <View style={styles.card}>
-  <Text style={styles.label}>Water Level</Text>
-  <View style={styles.meterContainer}>
-    <View style={[styles.meterBar, { width: `${waterLevel * 100}%` }]} />
-  </View>
-  <View style={styles.meterLabels}>
-    <Text style={styles.meterLabel}>Empty</Text>
-    <Text style={styles.meterLabel}>Full</Text>
-  </View>
-  <Text style={styles.value}>{Math.round(waterLevel * 100)}%</Text>
-</View>
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Doser</Text>
-        <Switch
-          value={isDoserOn}
-          onValueChange={setIsDoserOn}
-          trackColor={{ false: '#555', true: '#00e6c3' }}
-          thumbColor={isDoserOn ? '#00e6c3' : '#ccc'}
-        />
-        <Button
-          title="Set Doser Schedule"
-          onPress={() => {
-            Keyboard.dismiss();
-            setShowDoserPicker(true);
-          }}
-          color="#00e6c3"
+      {/* Relay Controls */}
+      <Text style={[styles.label, { marginTop: 16 }]}>Device Controls</Text>
+      {relays.map((state, index) => (
+        <View key={index} style={styles.card}>
+          <Text style={styles.label}>{relayNames[index]}</Text>
+          <Switch
+            value={state}
+            onValueChange={() => toggleRelay(index)}
+            trackColor={{ false: '#555', true: '#00e6c3' }}
+            thumbColor={state ? '#00e6c3' : '#ccc'}
           />
-
-        <Text style={styles.value}>Scheduled: {doserDate.toLocaleString()}</Text>
-        <DateTimePickerModal
-  isVisible={showDoserPicker}
-  mode="datetime"
-  onConfirm={(date) => {
-    setDoserDate(date);
-    setShowDoserPicker(false);
-  }}
-  onCancel={() => setShowDoserPicker(false)}
-/>
-
+        </View>
+      ))}
+      
+      {/* pH Gauge */}
+      <View style={styles.card}>
+        <Text style={styles.label}>pH Level</Text>
+        <AnimatedCircularProgress
+          size={120}
+          width={15}
+          fill={(sensorData.soilph / 14) * 100}
+          tintColor="#00e6c3"
+          backgroundColor="#333"
+          rotation={0}
+          lineCap="round"
+        >
+          {() => (
+            <Text style={{ color: '#fff', fontSize: 24 }}>
+              {sensorData.soilph.toFixed(1)} pH
+            </Text>
+          )}
+        </AnimatedCircularProgress>
       </View>
+
+      {/* Humidity */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Humidity</Text>
+        <Text style={styles.value}>{sensorData.hum} %</Text>
+      </View>
+
+      {/* Water Temp */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Water Temperature</Text>
+        <Text style={styles.value}>{sensorData.soiltemp} °C</Text>
+      </View>
+
+      {/* Water Level */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Water Level</Text>
+        <View style={styles.meterContainer}>
+          <View style={[styles.meterBar, { width: `${waterLevelPercent}%` }]} />
+        </View>
+        <View style={styles.meterLabels}>
+          <Text style={styles.meterLabel}>Empty</Text>
+          <Text style={styles.meterLabel}>Full</Text>
+        </View>
+        <Text style={styles.value}>{waterLevelPercent.toFixed(0)}%</Text>
+      </View>
+
+      
     </ScrollView>
   );
 }
 
-
+// --- STYLES ---
 const styles = StyleSheet.create({
   authContainer: {
     flex: 1,
     padding: 24,
-    backgroundColor: '#1e1e1e', // Match Dashboard
+    backgroundColor: '#1e1e1e',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -271,7 +278,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     marginBottom: 24,
     textAlign: 'center',
-    color: '#00e6c3', // Consistent accent color
+    color: '#00e6c3',
   },
   input: {
     width: '100%',
@@ -325,49 +332,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
   },
-  timeToggle: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    marginTop: 12,
-  },
-  rangeButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+  meterContainer: {
+    height: 20,
     backgroundColor: '#444',
-    marginRight: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginTop: 8,
+    marginBottom: 6,
   },
-  rangeButtonSelected: {
+  meterBar: {
+    height: '100%',
     backgroundColor: '#00e6c3',
   },
-  rangeButtonText: {
+  meterLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  meterLabel: {
     color: '#ccc',
+    fontSize: 12,
   },
-  rangeButtonTextSelected: {
-    color: '#000',
-    fontWeight: 'bold',
-  },
-
-  meterContainer: {
-  height: 20,
-  backgroundColor: '#444',
-  borderRadius: 10,
-  overflow: 'hidden',
-  marginTop: 8,
-  marginBottom: 6,
-},
-meterBar: {
-  height: '100%',
-  backgroundColor: '#00e6c3',
-},
-meterLabels: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-},
-meterLabel: {
-  color: '#ccc',
-  fontSize: 12,
-},
-
 });
-
